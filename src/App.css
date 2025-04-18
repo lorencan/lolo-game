@@ -1,0 +1,23 @@
+#root {
+  width: 100%;
+  height: 100vh;
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+  background: #f0f0f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.App {
+  background: white;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Arial', sans-serif;
+}
