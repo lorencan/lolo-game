@@ -9,24 +9,32 @@ const GameContainer = styled.div`
   gap: 20px;
 `;
 
-const MazeGrid = styled.div`
+const MazeGrid = styled.div<{ dimension: 'normal' | 'water' }>`
   display: grid;
   grid-template-columns: repeat(10, 30px);
   grid-template-rows: repeat(10, 30px);
   gap: 2px;
-  background-color: #2c3e50;
+  background-color: ${props => props.dimension === 'normal' ? '#2c3e50' : '#1a5f7a'};
   padding: 10px;
   border-radius: 8px;
+  transition: background-color 0.5s ease;
 `;
 
-const Cell = styled.div<{ isWall: boolean; isExit?: boolean }>`
+const Cell = styled.div<{ isWall: boolean; isExit?: boolean; dimension: 'normal' | 'water' }>`
   width: 30px;
   height: 30px;
-  background-color: ${props => 
-    props.isWall ? '#34495e' : 
-    props.isExit ? '#27ae60' : '#ecf0f1'};
+  background-color: ${props => {
+    if (props.isWall) {
+      return props.dimension === 'normal' ? '#34495e' : '#1e4d5f';
+    }
+    if (props.isExit) {
+      return props.dimension === 'normal' ? '#27ae60' : '#20c997';
+    }
+    return props.dimension === 'normal' ? '#ecf0f1' : '#e3f2fd';
+  }};
   border-radius: 4px;
   position: relative;
+  transition: background-color 0.5s ease;
   ${props => props.isExit && `
     &::after {
       content: '🚪';
@@ -39,7 +47,7 @@ const Cell = styled.div<{ isWall: boolean; isExit?: boolean }>`
   `}
 `;
 
-const Player = styled.div`
+const Character = styled.div`
   width: 24px;
   height: 24px;
   position: absolute;
@@ -53,45 +61,32 @@ const Player = styled.div`
   top: 0;
 `;
 
-const Zombie = styled.div`
+const Portal = styled.div`
   width: 24px;
   height: 24px;
   position: absolute;
-  transition: all 0.2s ease;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
   font-size: 20px;
-  left: 0;
-  top: 0;
+  animation: rotate 2s infinite linear;
+  
+  @keyframes rotate {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+  }
 `;
 
-const GameTitle = styled.h1`
-  color: #2c3e50;
-  font-size: 2rem;
-  margin-bottom: 20px;
-`;
-
-const WinMessage = styled.div`
-  color: #27ae60;
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin-top: 20px;
-`;
-
-const GameOverMessage = styled.div`
-  color: #e74c3c;
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin-top: 20px;
-`;
-
-const Timer = styled.div`
-  color: #e67e22;
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin-bottom: 10px;
+const WaterPit = styled.div`
+  width: 24px;
+  height: 24px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  font-size: 20px;
 `;
 
 const PowerBall = styled.div`
@@ -113,10 +108,42 @@ const PowerBall = styled.div`
   }
 `;
 
-// Interfaces
+const GameTitle = styled.h1`
+  color: #2c3e50;
+  font-size: 2rem;
+  margin-bottom: 20px;
+`;
+
+const Timer = styled.div`
+  color: #e67e22;
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 10px;
+`;
+
+const GameMessage = styled.div`
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: 20px;
+`;
+
+const WinMessage = styled(GameMessage)`
+  color: #27ae60;
+`;
+
+const GameOverMessage = styled(GameMessage)`
+  color: #e74c3c;
+`;
+
+// Types
 interface Position {
   x: number;
   y: number;
+}
+
+interface Enemy {
+  position: Position;
+  type: 'snake' | 'crocodile' | 'zombie';
 }
 
 interface GameState {
@@ -124,83 +151,19 @@ interface GameState {
   hasPower: boolean;
   powerTimeLeft: number;
   powerBalls: Position[];
+  dimension: 'normal' | 'water';
+  portals: Position[];
+  waterPits: Position[];
+  enemies: Enemy[];
 }
 
-// Helper function to check if a path exists from start to end
-const hasValidPath = (maze: boolean[][], start: Position, end: Position): boolean => {
-  const visited = Array(maze.length).fill(null)
-    .map(() => Array(maze[0].length).fill(false));
-  
-  const queue: Position[] = [start];
-  visited[start.y][start.x] = true;
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    if (current.x === end.x && current.y === end.y) {
-      return true;
-    }
-
-    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const [dx, dy] of directions) {
-      const newX = current.x + dx;
-      const newY = current.y + dy;
-
-      if (
-        newX >= 0 && newX < maze[0].length &&
-        newY >= 0 && newY < maze.length &&
-        !maze[newY][newX] &&
-        !visited[newY][newX]
-      ) {
-        queue.push({ x: newX, y: newY });
-        visited[newY][newX] = true;
-      }
-    }
-  }
-
-  return false;
-};
-
-// Generate random maze using a simple algorithm
-const generateMaze = () => {
-  const size = 10;
-  let maze: boolean[][];
-  let isValid = false;
-
-  do {
-    maze = Array(size).fill(null).map(() => Array(size).fill(true));
-    
-    // Create paths through the maze
-    for (let i = 0; i < size; i++) {
-      for (let j = 0; j < size; j++) {
-        if (Math.random() > 0.35) { // Reducido ligeramente para más caminos
-          maze[i][j] = false;
-        }
-      }
-    }
-    
-    // Ensure start and end positions are clear
-    maze[0][0] = false;
-    maze[size - 1][size - 1] = false;
-
-    // Verify if there's a valid path
-    isValid = hasValidPath(
-      maze,
-      { x: 0, y: 0 },
-      { x: size - 1, y: size - 1 }
-    );
-  } while (!isValid);
-  
-  return maze;
-};
-
-// Helper function to get valid moves
-const getValidMoves = (pos: Position, maze: boolean[][]) => {
+const getValidMoves = (pos: Position, maze: boolean[][]): Position[] => {
   const moves: Position[] = [];
   const directions = [
-    { x: 0, y: -1 }, // up
-    { x: 0, y: 1 },  // down
-    { x: -1, y: 0 }, // left
-    { x: 1, y: 0 }   // right
+    { x: 0, y: -1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 }
   ];
 
   directions.forEach(dir => {
@@ -218,228 +181,280 @@ const getValidMoves = (pos: Position, maze: boolean[][]) => {
   return moves;
 };
 
-const MazeGame = () => {
-  const [maze, setMaze] = useState(generateMaze());
+const generateMaze = () => {
+  const size = 10;
+  const maze = Array(size).fill(null).map(() => Array(size).fill(true));
+  
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      if (Math.random() > 0.35) {
+        maze[i][j] = false;
+      }
+    }
+  }
+  
+  maze[0][0] = false;
+  maze[size - 1][size - 1] = false;
+  
+  return maze;
+};
+
+const hasValidPath = (maze: boolean[][]): boolean => {
+  const size = maze.length;
+  const visited = Array(size).fill(null).map(() => Array(size).fill(false));
+  
+  const dfs = (x: number, y: number): boolean => {
+    if (x === size - 1 && y === size - 1) return true;
+    if (x < 0 || x >= size || y < 0 || y >= size) return false;
+    if (maze[y][x] || visited[y][x]) return false;
+    
+    visited[y][x] = true;
+    
+    // Verificar todas las direcciones posibles
+    const directions = [
+      [0, 1],  // derecha
+      [1, 0],  // abajo
+      [0, -1], // izquierda
+      [-1, 0]  // arriba
+    ];
+    
+    for (const [dx, dy] of directions) {
+      if (dfs(x + dx, y + dy)) return true;
+    }
+    
+    return false;
+  };
+  
+  return dfs(0, 0);
+};
+
+const generateValidMaze = (): boolean[][] => {
+  let maze: boolean[][];
+  do {
+    maze = generateMaze();
+  } while (!hasValidPath(maze));
+  return maze;
+};
+
+const generateRandomPositions = (
+  maze: boolean[][],
+  count: number,
+  exclude: Position[],
+  isPortal: boolean = false
+): Position[] => {
+  const positions: Position[] = [];
+  const size = maze.length;
+
+  for (let i = 0; i < count; i++) {
+    let x: number, y: number;
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    do {
+      x = Math.floor(Math.random() * size);
+      y = Math.floor(Math.random() * size);
+      attempts++;
+
+      if (attempts >= maxAttempts) break;
+    } while (
+      maze[y][x] ||
+      (x === 0 && y === 0) ||
+      (x === size - 1 && y === size - 1) ||
+      exclude.some(pos => pos.x === x && pos.y === y) ||
+      positions.some(pos => pos.x === x && pos.y === y) ||
+      (isPortal && (x < 2 || x > size - 3))
+    );
+
+    if (attempts < maxAttempts) {
+      positions.push({ x, y });
+    }
+  }
+  return positions;
+};
+
+const MazeGame: React.FC = () => {
+  const [maze, setMaze] = useState<boolean[][]>(generateValidMaze());
   const [playerPos, setPlayerPos] = useState<Position>({ x: 0, y: 0 });
-  const [zombies, setZombies] = useState<Position[]>([]);
-  const [hasWon, setHasWon] = useState(false);
-  const [gameOver, setGameOver] = useState(false);
   const [gameState, setGameState] = useState<GameState>({
     timeLeft: 30,
     hasPower: false,
     powerTimeLeft: 0,
-    powerBalls: []
+    powerBalls: [],
+    dimension: 'normal',
+    portals: [],
+    waterPits: [],
+    enemies: []
   });
+  const [hasWon, setHasWon] = useState(false);
+  const [gameOver, setGameOver] = useState(false);
 
-  // Initialize zombies
-  useEffect(() => {    const initialZombies: Position[] = [];
-    const numInitialZombies = 5;
-
-    for (let i = 0; i < numInitialZombies; i++) {
-      let x: number, y: number;
-      let attempts = 0;
-      const maxAttempts = 50;
-
-      do {
-        x = Math.floor(Math.random() * maze[0].length);
-        y = Math.floor(Math.random() * maze.length);
-        attempts++;
-
-        if (attempts >= maxAttempts) break;
-      } while (
-        maze[y][x] || // No en paredes
-        (x === 0 && y === 0) || // No en inicio
-        (x === maze[0].length - 1 && y === maze.length - 1) || // No en salida
-        initialZombies.some(z => z.x === x && z.y === y) // No donde hay otro zombie
-      );
-
-      if (attempts < maxAttempts) {
-        initialZombies.push({ x, y });
+  // Initialize game elements
+  useEffect(() => {
+    const portals = generateRandomPositions(maze, 2, [], true);
+    const waterPits = generateRandomPositions(maze, 4, portals);
+    const powerBalls = generateRandomPositions(maze, 3, [...portals, ...waterPits]);
+    
+    const initialEnemies: Enemy[] = [];
+    const numEnemies = gameState.dimension === 'normal' ? 5 : 4;
+    const existingPositions = [...portals, ...waterPits, ...powerBalls];
+    
+    for (let i = 0; i < numEnemies; i++) {
+      const positions = generateRandomPositions(maze, 1, existingPositions);
+      if (positions.length > 0) {
+        initialEnemies.push({
+          position: positions[0],
+          type: gameState.dimension === 'normal' ? 'zombie' : 
+                Math.random() < 0.5 ? 'snake' : 'crocodile'
+        });
+        existingPositions.push(positions[0]);
       }
     }
-    setZombies(initialZombies);
-  }, [maze]);
 
-  // Zombie reproduction
+    setGameState(prev => ({
+      ...prev,
+      portals,
+      waterPits,
+      powerBalls,
+      enemies: initialEnemies
+    }));
+  }, [maze, gameState.dimension]);
+
+  // Handle all collisions in a single effect
   useEffect(() => {
-    if (hasWon || gameOver) return;
+    // Power ball collection
+    const powerBall = gameState.powerBalls.find(
+      (ball: Position) => ball.x === playerPos.x && ball.y === playerPos.y
+    );
 
-    const reproductionInterval = setInterval(() => {
-      setZombies(prevZombies => {
-        if (prevZombies.length >= 12) return prevZombies; // Límite máximo de zombies
+    if (powerBall) {
+      // Collect power ball and activate power
+      setGameState(prev => ({
+        ...prev,
+        hasPower: true,
+        powerTimeLeft: 10,
+        powerBalls: prev.powerBalls.filter(
+          (b: Position) => b.x !== powerBall.x || b.y !== powerBall.y
+        )
+      }));
+    }
 
-        const newZombies = [...prevZombies];
-        
-        // Intentar reproducir cada zombie existente
-        prevZombies.forEach(zombie => {
-          if (Math.random() < 0.3) { // 30% de probabilidad de reproducción
-            const validMoves = getValidMoves(zombie, maze);
-            const availableMoves = validMoves.filter(move => 
-              !newZombies.some(z => z.x === move.x && z.y === move.y) &&
-              !(move.x === 0 && move.y === 0) &&
-              !(move.x === maze[0].length - 1 && move.y === maze.length - 1)
-            );
+    // Enemy collision
+    const collidingEnemy = gameState.enemies.find(
+      (enemy: Enemy) => enemy.position.x === playerPos.x && enemy.position.y === playerPos.y
+    );
 
-            if (availableMoves.length > 0) {
-              const newPosition = availableMoves[Math.floor(Math.random() * availableMoves.length)];
-              newZombies.push(newPosition);
-            }
-          }
-        });
+    if (collidingEnemy) {
+      if (gameState.hasPower) {
+        // Si tenemos poder, eliminamos el enemigo
+        setGameState(prev => ({
+          ...prev,
+          enemies: prev.enemies.filter(
+            (enemy: Enemy) => 
+              enemy.position.x !== playerPos.x || enemy.position.y !== playerPos.y
+          )
+        }));
+      } else {
+        // Si no tenemos poder, game over
+        setGameOver(true);
+      }
+    }
 
-        return newZombies;
+    // Portal collision handling
+    const portal = gameState.portals.find(
+      (p: Position) => p.x === playerPos.x && p.y === playerPos.y
+    );    if (portal) {
+      const currentTime = gameState.timeLeft;
+      setGameState(prev => ({
+        ...prev,
+        dimension: prev.dimension === 'normal' ? 'water' : 'normal',
+        hasPower: false,
+        powerTimeLeft: 0,
+        timeLeft: currentTime
+      }));
+      setMaze(generateValidMaze());
+      setPlayerPos({ x: 0, y: 0 });
+    }
+
+    // Water pit collision
+    const waterPit = gameState.waterPits.find(
+      (w: Position) => w.x === playerPos.x && w.y === playerPos.y
+    );
+
+    if (waterPit) {
+      setGameOver(true);
+    }
+  }, [playerPos, gameState.powerBalls, gameState.enemies, gameState.portals, gameState.waterPits, gameState.hasPower]);
+
+  // Power timer countdown
+  useEffect(() => {
+    if (!gameState.hasPower) return;
+
+    const powerTimer = setInterval(() => {
+      setGameState(prev => {
+        if (prev.powerTimeLeft <= 1) {
+          return {
+            ...prev,
+            hasPower: false,
+            powerTimeLeft: 0
+          };
+        }
+        return {
+          ...prev,
+          powerTimeLeft: prev.powerTimeLeft - 1
+        };
       });
-    }, 1000); // Intentar reproducir cada 1 segundo
+    }, 1000);
 
-    return () => clearInterval(reproductionInterval);
-  }, [maze, hasWon, gameOver]);
+    return () => clearInterval(powerTimer);
+  }, [gameState.hasPower]);
 
-  // Move zombies with smarter pathfinding
+  // Enemy movement and reproduction
   useEffect(() => {
     if (hasWon || gameOver) return;
 
     const moveInterval = setInterval(() => {
-      setZombies(prevZombies => {
-        return prevZombies.map(zombie => {
-          const validMoves = getValidMoves(zombie, maze);
-          if (validMoves.length === 0) return zombie;
-          
-          // 30% de probabilidad de moverse hacia el jugador
+      setGameState(prev => {
+        const newEnemies = prev.enemies.map(enemy => {
+          const validMoves = getValidMoves(enemy.position, maze);
+          if (validMoves.length === 0) return enemy;
+
           if (Math.random() < 0.3) {
-            // Encontrar el movimiento que más nos acerca al jugador
             const bestMove = validMoves.reduce((best, move) => {
               const currentDist = Math.abs(move.x - playerPos.x) + Math.abs(move.y - playerPos.y);
               const bestDist = Math.abs(best.x - playerPos.x) + Math.abs(best.y - playerPos.y);
               return currentDist < bestDist ? move : best;
             }, validMoves[0]);
-            return bestMove;
+            return { ...enemy, position: bestMove };
           }
-          
-          // 70% de probabilidad de moverse aleatoriamente
+
           const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-          return randomMove;
+          return { ...enemy, position: randomMove };
         });
+
+        if (newEnemies.length < 12 && Math.random() < 0.3) {
+          const parentEnemy = newEnemies[Math.floor(Math.random() * newEnemies.length)];
+          const validMoves = getValidMoves(parentEnemy.position, maze);
+          const availableMoves = validMoves.filter(move => 
+            !newEnemies.some(e => e.position.x === move.x && e.position.y === move.y) &&
+            !prev.waterPits.some(pit => pit.x === move.x && pit.y === move.y) &&
+            !prev.portals.some(portal => portal.x === move.x && portal.y === move.y)
+          );
+
+          if (availableMoves.length > 0) {
+            const newPosition = availableMoves[Math.floor(Math.random() * availableMoves.length)];
+            newEnemies.push({
+              position: newPosition,
+              type: parentEnemy.type
+            });
+          }
+        }
+
+        return { ...prev, enemies: newEnemies };
       });
-    }, 700); // Movimiento más rápido
+    }, 700);
 
     return () => clearInterval(moveInterval);
   }, [maze, hasWon, gameOver, playerPos]);
-
-  // Initialize power balls
-  useEffect(() => {
-    const newPowerBalls: Position[] = [];
-    const numPowerBalls = 3;
-
-    for (let i = 0; i < numPowerBalls; i++) {
-      let x: number, y: number;
-      do {
-        x = Math.floor(Math.random() * maze[0].length);
-        y = Math.floor(Math.random() * maze.length);
-      } while (
-        maze[y][x] || // No colocar en paredes
-        (x === 0 && y === 0) || // No colocar en la posición inicial
-        (x === maze[0].length - 1 && y === maze.length - 1) || // No colocar en la salida
-        newPowerBalls.some(ball => ball.x === x && ball.y === y) // No colocar donde ya hay una bola
-      );
-      newPowerBalls.push({ x, y });
-    }
-    setGameState(prev => ({ ...prev, powerBalls: newPowerBalls }));
-  }, [maze]);
-
-  // Timer countdown
-  useEffect(() => {
-    if (hasWon || gameOver) return;
-
-    const timer = setInterval(() => {
-      setGameState(prev => {
-        // Actualizar tiempo de poder si está activo
-        if (prev.hasPower) {
-          if (prev.powerTimeLeft <= 1) {
-            return {
-              ...prev,
-              hasPower: false,
-              powerTimeLeft: 0,
-              timeLeft: prev.timeLeft - 1
-            };
-          }
-          return {
-            ...prev,
-            powerTimeLeft: prev.powerTimeLeft - 1,
-            timeLeft: prev.timeLeft - 1
-          };
-        }
-        
-        // Verificar si se acabó el tiempo
-        if (prev.timeLeft <= 1) {
-          setGameOver(true);
-          return prev;
-        }
-        
-        return {
-          ...prev,
-          timeLeft: prev.timeLeft - 1
-        };
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [hasWon, gameOver]);
-
-  // Collision detection with power balls and zombies
-  useEffect(() => {
-    // Recoger power ball
-    const powerBallIndex = gameState.powerBalls.findIndex(
-      ball => ball.x === playerPos.x && ball.y === playerPos.y
-    );
-
-    if (powerBallIndex !== -1) {
-      setGameState(prev => ({
-        ...prev,
-        hasPower: true,
-        powerTimeLeft: 10,
-        powerBalls: prev.powerBalls.filter((_, i) => i !== powerBallIndex)
-      }));
-    }
-
-    // Colisión con zombies
-    const zombieCollision = zombies.some(
-      zombie => zombie.x === playerPos.x && zombie.y === playerPos.y
-    );
-
-    if (zombieCollision) {
-      if (gameState.hasPower) {
-        // Eliminar zombie
-        setZombies(prev => 
-          prev.filter(zombie => 
-            !(zombie.x === playerPos.x && zombie.y === playerPos.y)
-          )
-        );
-      } else {
-        setGameOver(true);
-      }
-    }
-  }, [playerPos, zombies, gameState.hasPower, gameState.powerBalls]);
-
-  // Game reset function
-  const resetGame = useCallback(() => {
-    setMaze(generateMaze());
-    setPlayerPos({ x: 0, y: 0 });
-    setHasWon(false);
-    setGameOver(false);
-    setGameState({
-      timeLeft: 30,
-      hasPower: false,
-      powerTimeLeft: 0,
-      powerBalls: []
-    });
-  }, []);
-
-  // Handle game over conditions
-  useEffect(() => {
-    if (gameOver) {
-      setTimeout(resetGame, 2000);
-    }
-  }, [gameOver, resetGame]);
 
   // Handle keyboard movement
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
@@ -477,10 +492,9 @@ const MazeGame = () => {
     // Check if player has reached the goal
     if (newPos.x === maze[0].length - 1 && newPos.y === maze.length - 1) {
       setHasWon(true);
-      setTimeout(() => {
-        setMaze(generateMaze());
-        setPlayerPos({ x: 0, y: 0 });
-        setHasWon(false);
+      setTimeout(() => {      setMaze(generateValidMaze());
+      setPlayerPos({ x: 0, y: 0 });
+      setHasWon(false);
       }, 2000);
     }
   }, [maze, playerPos, hasWon, gameOver]);
@@ -492,35 +506,81 @@ const MazeGame = () => {
     };
   }, [handleKeyPress]);
 
+  // Handle portal effects
+  const handlePortalTransition = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      dimension: prev.dimension === 'normal' ? 'water' : 'normal',
+      hasPower: false,
+      powerTimeLeft: 0
+    }));
+    setMaze(generateMaze());
+    setPlayerPos({ x: 0, y: 0 });
+  }, []);
+
+  // Main game timer
+  useEffect(() => {
+    if (gameOver || hasWon) return;
+    
+    const timer = setInterval(() => {
+      setGameState(prev => {
+        const newTimeLeft = prev.timeLeft - 1;
+        if (newTimeLeft <= 0) {
+          setGameOver(true);
+          return prev;
+        }
+        return {
+          ...prev,
+          timeLeft: newTimeLeft
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameOver, hasWon]);
+
   return (
     <GameContainer>
-      <GameTitle>Lolo's Maze Adventure</GameTitle>
+      <GameTitle>
+        Lolo&apos;s {gameState.dimension === 'normal' ? 'Zombie' : 'Water'} Maze
+      </GameTitle>
       <Timer>
         Tiempo: {gameState.timeLeft}s
         {gameState.hasPower && ` | ⚡ Power: ${gameState.powerTimeLeft}s`}
-        {` | 🧟 Zombies: ${zombies.length}`}
-      </Timer>
-      <MazeGrid>
+        {` | ${gameState.dimension === 'normal' ? '🧟' : '🐊'} Enemies: ${gameState.enemies.length}`}
+      </Timer>      <MazeGrid dimension={gameState.dimension}>
         {maze.map((row, y) => 
           row.map((isWall, x) => (
             <Cell 
               key={`${x}-${y}`} 
               isWall={isWall}
               isExit={x === maze[0].length - 1 && y === maze.length - 1}
+              dimension={gameState.dimension}
             >
-              {zombies.map((zombie, index) => 
-                zombie.x === x && zombie.y === y ? (
-                  <Zombie key={`zombie-${index}`}>🧟</Zombie>
-                ) : null
+              {gameState.portals.some(p => p.x === x && p.y === y) && (
+                <Portal>🌀</Portal>
               )}
+              {gameState.waterPits.some(w => w.x === x && w.y === y) && (
+                <WaterPit>💧</WaterPit>
+              )}
+              {gameState.enemies.map((enemy, index) => (
+                enemy.position.x === x && enemy.position.y === y && (
+                  <Character key={`enemy-${index}`}>
+                    {enemy.type === 'zombie' ? '🧟' : 
+                     enemy.type === 'snake' ? '🐍' : '🐊'}
+                  </Character>
+                )
+              ))}
               {playerPos.x === x && playerPos.y === y && (
-                <Player>{gameState.hasPower ? '😈' : '😎'}</Player>
+                <Character>
+                  {gameState.hasPower ? '😈' : '😎'}
+                </Character>
               )}
-              {gameState.powerBalls.map((ball, index) => 
-                ball.x === x && ball.y === y ? (
+              {gameState.powerBalls.map((ball, index) => (
+                ball.x === x && ball.y === y && (
                   <PowerBall key={`power-${index}`} />
-                ) : null
-              )}
+                )
+              ))}
             </Cell>
           ))
         )}
@@ -532,9 +592,9 @@ const MazeGame = () => {
       )}
       {gameOver && (
         <GameOverMessage>
-          {gameState.timeLeft <= 0 
-            ? '¡Se acabó el tiempo! Intenta ser más rápido...'
-            : '¡Oh no! ¡Los zombies te atraparon! Intentalo de nuevo...'}
+          {gameState.waterPits.some(w => w.x === playerPos.x && w.y === playerPos.y)
+            ? '¡Oh no! ¡Caíste en el agua!'
+            : `¡Oh no! ¡Los ${gameState.dimension === 'normal' ? 'zombies' : 'animales'} te atraparon!`}
         </GameOverMessage>
       )}
     </GameContainer>
